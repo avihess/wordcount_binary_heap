@@ -1,0 +1,333 @@
+<!DOCTYPE HTML>
+<html>
+    <head>
+        <title>Calculate The Most Frequent Words In Some Text</title>
+    </head>
+    <body>
+        <h1>Calculate The Most Frequent Words In Some Text</h1>
+        <div id="columns">
+            <div id="inputContainer">
+                <h3>User Input</h3>
+                <form id="userInput">
+                    <label for="text">Enter your text here (limit 10,000 characters):</label> <br />
+                    <textarea placeholder="Put text here..." cols="50" rows="20" maxlength="10000" id="text"></textarea> <br /><br />
+                    
+                    <label for="number">How many words do you want to be returned (n most frequent words)?</label> <br />
+                    <input name="number" id="num" type="text" size="4" maxlength="4"> <br /> <br />
+                    <button type="button" onclick="main();">Click Me</button> <br /><br />
+                </form>
+            </div>
+            <div id="outputContainer">
+                <h3>Output</h3>
+                <label for="displayFreq">Display Frequencies</label>
+                <input type="checkbox" onclick="displayFreq();" id="displayFreq"><br /><br />
+                <div id="output">
+                    <div id="outputWords"></div>
+                    <div id="outputBoth" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+
+        <script type="text/javascript">
+        
+            //This function runs when the user clicks the button.
+            function main () {
+        
+                var userInput = getUserInput(); //get user inputs, returns false on error
+                
+                if (userInput) {
+                    var sText = userInput[0];
+                    var num = userInput[1];
+                    
+                    var outArr = mostFrequent(sText, num);
+                    
+                    sText = null; //set to null to help garbage collector.
+                    
+                    if (outArr) { //outArr returns false if num is too large.
+                        outputWords(outArr);
+                    }
+                    outArr = null; 
+                }
+            }
+        
+        
+            //Grab user inputs and check validity
+            //Returns array with [inputText (string), num];
+            function getUserInput () {
+                var sText = document.getElementById("text");
+                var num = document.getElementById("num");
+                
+                //Check to make sure sText has text.
+                if (doesExist(sText)) {
+                    sText = sText.value;
+                    var sTxt = sText.replace(/\s/g,""); //get rid of extra whitespace to check for blank text
+                    
+                    if (sTxt === null || sTxt === '') {
+                        alert("Please enter some text");
+                        return false;
+                    }
+                }
+                
+                //Check to make sure that num is a positive integer
+                if (doesExist(num)) {
+                    num = parseInt(escape(num.value)); //If user enters a decimal, round down.
+                    if (isNaN(num)) {
+                        alert("Please enter a number.");
+                        return false;
+                    }
+                    else if (num <= 0) {
+                        alert("Please enter a positive, non-zero integer.");
+                        return false;
+                    }
+                }
+        
+                return [sText, num];
+            }
+        
+        
+            //Input: text, positive integer
+            //Output: array of "num" most frequent words from the text in the form: [[words], [word1 : freq1, word2 : freq2]]
+            function mostFrequent (sText, num) {
+                
+                //Make the text lowercase (so we compare apples to apples), and pull out all words (get rid of punctuation, numbers, etc.).
+                //This also serves to prevent possible hacks (escaping input).
+                var arr = [];
+                sText = sText.toLowerCase().replace(/'/g,""); //keep contractions like we'll, didn't etc.
+                arr = sText.match(/[a-z]+/g);
+                
+                //Do a quick check to see if num is larger than the number of words in the text.
+                if (num > arr.length) {
+                    alert ("Please enter a smaller number. There are " + arr.length + " total words in the text.");
+                    return false;
+                }
+                
+                //if we only have one word, just return array
+                if (num == 1 && arr.length == 1) {
+                    return [[arr[0]], [arr[0] + " : " + 1]];
+                }
+                
+                //We will pass this countFunc to the reduce method below. It returns an object with key:value pairs of word:frequency.
+                //Javascript's reduce method expects a callback function with parameters : previousValue/(or initialValue if provided), currentValue, index, array
+                function countFunc (obj, currentValue, index, array) {
+                    currentValue = currentValue + "_post"; //add a postfix in case we run into a built-in object property (e.g. constructor, prototype etc.)
+                    if (!doesExist(obj.words[currentValue])) { //if the current key does not exist, create it and set the frequency equal to 1
+                            obj.words[currentValue] = 1;
+                            obj.numUniqueWords += 1;
+                    }
+                    else { //key already exists, so just increase the frequency by 1
+                        obj.words[currentValue] += 1;
+                    }
+                    return obj;  
+                }
+                
+                //use the reduce method to apply the countFunc and return an object that has word:frequency key:value pairs.
+                var reduceObj = arr.reduce(countFunc, {numUniqueWords:0, words:{}}); //reduce function with callback function of countFunc. Pass empty words object as initial value.
+                
+                arr = null; //set arr to null to help garbage collector (free up memory);
+                
+                //We need one last check to see if our "num" user input is greater than the number of words once the text has been reduced.
+                if (reduceObj.numUniqueWords < num) {
+                    alert("You have entered a value that is greater than the number of unique words. Please enter a smaller number next time. There are " + reduceObj.numUniqueWords + " unique words.");
+                    return false;
+                }
+                
+                //Now that we have counted up each instance of a word, make a new object with key:value pairs of frequency: [word array],
+                //so we have a fast lookup time to get all words for a given frequency.
+                //Later, we will put the frequencies into a binary heap.
+                var freqObj = {}; 
+                reduceObj = reduceObj.words;
+                for (word in reduceObj) {
+                    var freq = String(reduceObj[word]);
+                    if (!doesExist(freqObj[freq])) {
+                        freqObj[freq] = [];
+                        freqObj[freq].push(word);
+                    }
+                    else {
+                        freqObj[freq].push(word);
+                    }
+                }
+                reduceObj = null; //set reduceObj to null to free some memory;
+                
+                //Create a new instance of binary heap and add the frequency numbers
+                var bh = new BinaryHeap;
+                for (freq in freqObj) {
+                    bh.push(Number(freq));
+                }
+                
+                //Get the Nth most frequent words (designated by "num", which the user inputs)
+                //output as array [[words],[words:frequencies]]
+                var outArr = [[],[]];
+                var count = 0;
+                for (freq in freqObj) {
+                    var freqNum = bh.pop(); //pop largest frequency from the heap and grab associated word array
+                    var words = freqObj[String(freqNum)]; 
+                    var wordsLen = words.length;
+                    for (var j = 0; j < wordsLen; j++ ) {
+                        word = words[j];
+                        word = word.replace("_post", ""); //get rid of postfix (added earlier to prevent grabbing the object's "constructor" or "prototype", etc.)
+                        outArr[0].push(word);
+                        outArr[1].push(word + " : " + freqNum);
+                        count++;
+                        if (count == num) {
+                            freqObj = null; //set to null to help garbage collector.
+                            bh = null;
+                            
+                            return outArr;
+                        }       
+                    }
+                }   
+            }
+            
+            
+            //Put the most frequent words (and associated frequencies) into the page
+            function outputWords (arr) {
+                var outputW = "";
+                var outputF = "";
+                var outputWDiv = document.getElementById("outputWords");
+                var outputFDiv = document.getElementById("outputBoth");
+                if (doesExist(outputWDiv) && doesExist(outputFDiv)) {
+                    var len = arr[0].length;
+                    for (var i = 0; i < len; i++) {
+                        outputW += "<div>" + arr[0][i] + "</div>";
+                        outputF += "<div>" + arr[1][i] + "</div>";  
+                    }
+                    outputWDiv.innerHTML = outputW;
+                    outputFDiv.innerHTML = outputF;
+                    
+                    displayFreq();// is checkbox checked?
+                }
+            }
+            
+            //show frequencies next to words if checkbox is checked
+            function displayFreq () {
+                var checkBox = document.getElementById("displayFreq");
+                var outFDiv = document.getElementById("outputBoth");
+                var outWDiv = document.getElementById("outputWords");
+                if (doesExist(checkBox) && doesExist(outFDiv) && doesExist(outWDiv)) {
+                    if (checkBox.checked) {
+                        outFDiv.style.display = "";
+                        outWDiv.style.display = "none";
+                    }
+                    else {
+                        outFDiv.style.display = "none";
+                        outWDiv.style.display = "";
+                    }
+                }
+            }
+            
+            
+            //We check for null/undefined a lot, so lets make a function so the code is easier to read.
+            function doesExist (obj) {
+                if (typeof obj !== 'undefined' && obj !== null) {
+                    return true;
+                }
+                else {
+                    return false;
+                }
+            }
+            
+            
+            //BINARY HEAP constructor
+            var BinaryHeap = function () {
+                //We'll use an array to keep track of our nodes.
+                //Parentnodes are floor((childNode-1)/2)
+                //Left node is thus 2*parentNode + 1, and Right node is Left node + 1
+                
+                //PRIVATE methods/properties;
+                var nodes = [],
+            
+                //Swap node a and node b
+                swap = function (indexA, indexB) {
+                    var temp = nodes[indexA];
+                    nodes[indexA] = nodes[indexB];
+                    nodes[indexB] = temp;
+                },
+                
+                //When we pop off the top node, we need to rearrange the child nodes by putting the largest child node into the parent Node's position.
+                //Keep swapping until we get to the end of the heap.
+                bubbleDown = function (index) {
+            
+                    if (index < nodes.length) {
+                        var leftChild = getLeftChildIndex(index);
+                        var rightChild = getRightChildIndex(index);
+                        var swapIndex = index;
+                        
+                        //Should the left child be put into the parent position?
+                        if (leftChild < nodes.length) {
+                            if (nodes[leftChild] > nodes[swapIndex]) {
+                                swapIndex = leftChild;
+                            }
+                        }
+            
+                        //Should the right child be put into the parent position?
+                        if (rightChild < nodes.length) {
+                            if (nodes[rightChild] > nodes[swapIndex]) {
+                                swapIndex = rightChild;
+                            }
+                        }
+            
+                        //If we changed the swapIndex, swap the nodes, then continue to bubble down.
+                        if (swapIndex !== index) {
+                            swap(swapIndex, index);
+                            index = swapIndex;
+                            bubbleDown(index);
+                        }
+                    }
+                },
+            
+                //When we insert a new node, bubble it up the heap by swapping with parents until it is in the correct position.
+                bubbleUp = function (index) {
+                    var parentIndex;
+            
+                    //Stop when we hit the top node (root)
+                    while (index > 0) {
+                        parentIndex = getParentIndex(index);
+            
+                        //Compare the new node to its parentnode
+                        //If the new node is larger, swap with the parent.
+                        if (nodes[index] > nodes[parentIndex]) {
+                            swap(index, parentIndex);
+                        }
+                        index = parentIndex;
+                    }
+                },
+                
+                getParentIndex = function (childIndex) {
+                    return Math.floor((childIndex - 1) / 2);
+                },
+                
+                getLeftChildIndex = function (parentIndex) {
+                    return 2*parentIndex + 1;
+                },
+                
+                getRightChildIndex = function (parentIndex) {
+                    return 2*parentIndex + 2;
+                };
+            
+                //PUBLIC methods/properties
+                return {
+                    pop: function () {
+                        var val = nodes[0];
+            
+                        if (val === null) {
+                            return null;
+                        }
+                        
+                        if (nodes.length > 0) {
+                            nodes[0] = nodes.pop();
+                            bubbleDown(0);
+                        }
+            
+                        return val;
+                    },
+            
+                    push: function (value) {
+                        nodes.push(value);
+                        bubbleUp(nodes.length - 1);
+                    }
+                };
+            };
+        
+        </script>
+    </body>
+</html>
